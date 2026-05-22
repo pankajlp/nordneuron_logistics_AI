@@ -1,0 +1,13 @@
+{
+  "name": "nordneuron-logistics-ai",
+  "version": "1.0.0",
+  "description": "NordNeuron Logistics & Shipping AI Suite",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx -y http-server -p 3000 -o"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "author": "",
+  "license": "ISC"
+}

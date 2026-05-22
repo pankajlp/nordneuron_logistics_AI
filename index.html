@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NordNeuron Logistics AI - Intelligent Shipping Suite</title>
+  <!-- Google Fonts: Outfit & Plus Jakarta Sans -->
+  <link rel="stylesheet" href="styles.css">
+  <!-- FontAwesome Icons for modern dashboard styling -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Three.js & OrbitControls for 3D Packing Visualizer -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+
+  <div id="app-container">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand-section">
+        <div class="brand-logo">
+          <i class="fa-solid fa-brain"></i>
+        </div>
+        <div>
+          <div class="brand-name">NordNeuron</div>
+          <div class="brand-tag">Logistics AI</div>
+        </div>
+      </div>
+      
+      <ul class="nav-menu">
+        <li class="nav-item active" data-tab="rfq-analyzer">
+          <i class="fa-solid fa-file-invoice-dollar"></i>
+          <span>RFQ Analyzer</span>
+        </li>
+        <li class="nav-item" data-tab="freight-calculator">
+          <i class="fa-solid fa-calculator"></i>
+          <span>Freight Calculator</span>
+        </li>
+        <li class="nav-item" data-tab="container-planner">
+          <i class="fa-solid fa-cubes"></i>
+          <span>Container Load Planner</span>
+        </li>
+        <li class="nav-item" data-tab="hs-finder">
+          <i class="fa-solid fa-magnifying-glass-location"></i>
+          <span>HS Code Finder</span>
+        </li>
+        <li class="nav-item" data-tab="demurrage-calc">
+          <i class="fa-solid fa-clock-rotate-left"></i>
+          <span>Demurrage Calculator</span>
+        </li>
+        <li class="nav-item" data-tab="eta-predictor">
+          <i class="fa-solid fa-anchor"></i>
+          <span>ETA Predictor</span>
+        </li>
+      </ul>
+      
+      <div class="sidebar-footer">
+        <div class="user-avatar">NN</div>
+        <div class="user-info">
+          <div class="user-name">Logistics Operator</div>
+          <div class="user-role">Demo Account</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Dashboard Workspace -->
+    <main class="main-content">
+      
+      <!-- Top Dashboard Header -->
+      <header class="top-header">
+        <div class="header-title-wrapper">
+          <h1 id="module-title">RFQ Analyzer</h1>
+          <p id="module-subtitle">Extract and structure shipping rates automatically from unstructured documents.</p>
+        </div>
+        <div class="system-status-indicator">
+          <div class="status-pulse"></div>
+          <span>AI Engine Online</span>
+        </div>
+      </header>
+
+      <!-- Global Quick Statistics Row -->
+      <section class="quick-stats-grid">
+        <div class="stat-card">
+          <div class="stat-details">
+            <h4>Active RFQs</h4>
+            <div class="stat-val" id="stat-active-rfqs">4</div>
+            <div class="stat-delta up"><i class="fa-solid fa-arrow-up"></i> 12% vs last week</div>
+          </div>
+          <div class="stat-icon"><i class="fa-solid fa-file-contract"></i></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-details">
+            <h4>Est. Freight Savings</h4>
+            <div class="stat-val" id="stat-freight-savings">$14,240</div>
+            <div class="stat-delta up"><i class="fa-solid fa-arrow-up"></i> $3,450 this month</div>
+          </div>
+          <div class="stat-icon"><i class="fa-solid fa-piggy-bank"></i></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-details">
+            <h4>Load Vol packed</h4>
+            <div class="stat-val" id="stat-vol-packed">91.4%</div>
+            <div class="stat-delta up"><i class="fa-solid fa-arrow-up"></i> +2.3% avg fit</div>
+          </div>
+          <div class="stat-icon"><i class="fa-solid fa-boxes-packing"></i></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-details">
+            <h4>Demurrage Alerts</h4>
+            <div class="stat-val" id="stat-demurrage-alerts">2</div>
+            <div class="stat-delta down"><i class="fa-solid fa-arrow-down"></i> -1 resolving</div>
+          </div>
+          <div class="stat-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+        </div>
+      </section>
+
+      <!-- MODULE 1: RFQ Analyzer Panel -->
+      <section id="rfq-analyzer-panel" class="module-panel active">
+        <div class="rfq-grid">
+          
+          <div class="card">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-cloud-arrow-up"></i> Document Upload</h3>
+            </div>
+            
+            <!-- File Drag and Drop Zone -->
+            <div class="upload-area" id="rfq-drop-zone">
+              <i class="fa-solid fa-file-excel upload-icon"></i>
+              <div>
+                <p class="bold">Drag & Drop RFQ Document</p>
+                <p class="text-muted mt-4" style="font-size: 0.8rem;">Supports Excel (.xlsx), PDF, or Email files</p>
+              </div>
+              <button class="btn btn-secondary" onclick="document.getElementById('rfq-file-input').click()">Browse Files</button>
+              <input type="file" id="rfq-file-input" style="display: none;" accept=".xlsx,.xls,.pdf,.eml,.txt">
+            </div>
+
+            <!-- Uploaded files listing -->
+            <div class="file-list" id="rfq-file-list">
+              <!-- Dynamically populated files -->
+            </div>
+
+            <!-- Simulation of extraction pipeline steps -->
+            <div class="analysis-status-wrapper" id="analysis-progress-wrapper" style="display: none;">
+              <h4 class="input-label mb-4">AI Extraction Status</h4>
+              <div class="progress-step-row">
+                <div class="progress-step" id="step-1">
+                  <i class="fa-solid fa-circle-notch fa-spin"></i>
+                  <span>Parsing uploaded documents...</span>
+                </div>
+                <div class="progress-step" id="step-2">
+                  <i class="fa-regular fa-circle"></i>
+                  <span>Applying OCR and NLP models...</span>
+                </div>
+                <div class="progress-step" id="step-3">
+                  <i class="fa-regular fa-circle"></i>
+                  <span>Resolving Ports & Incoterms...</span>
+                </div>
+                <div class="progress-step" id="step-4">
+                  <i class="fa-regular fa-circle"></i>
+                  <span>Structuring shipment values...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card data-extraction-table-card">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-indent"></i> Structured shipment data</h3>
+              <span class="badge badge-info" id="extraction-badge">Draft</span>
+            </div>
+
+            <div class="extraction-grid">
+              <div class="form-group">
+                <label class="input-label">Port of Loading (POL)</label>
+                <input type="text" class="form-input" id="rfq-pol" placeholder="e.g. Shanghai (CNSHA)">
+              </div>
+              <div class="form-group">
+                <label class="input-label">Port of Discharge (POD)</label>
+                <input type="text" class="form-input" id="rfq-pod" placeholder="e.g. Los Angeles (USLAX)">
+              </div>
+              <div class="form-group">
+                <label class="input-label">Container Type</label>
+                <select class="form-select" id="rfq-container-type">
+                  <option value="">Select Container</option>
+                  <option value="20GP">20ft Standard (GP)</option>
+                  <option value="40GP">40ft Standard (GP)</option>
+                  <option value="40HC" selected>40ft High Cube (HC)</option>
+                  <option value="45HC">45ft High Cube (HC)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="input-label">Volume (No. of Containers)</label>
+                <input type="number" class="form-input" id="rfq-volume" placeholder="e.g. 15">
+              </div>
+              <div class="form-group">
+                <label class="input-label">Incoterms</label>
+                <select class="form-select" id="rfq-incoterms">
+                  <option value="">Select Incoterm</option>
+                  <option value="FOB" selected>FOB (Free on Board)</option>
+                  <option value="CIF">CIF (Cost, Insurance & Freight)</option>
+                  <option value="EXW">EXW (Ex Works)</option>
+                  <option value="DDP">DDP (Delivered Duty Paid)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="input-label">Commodity</label>
+                <input type="text" class="form-input" id="rfq-commodity" placeholder="e.g. Consumer Electronics">
+              </div>
+              <div class="form-group">
+                <label class="input-label">Carrier</label>
+                <input type="text" class="form-input" id="rfq-carrier" placeholder="e.g. MAERSK">
+              </div>
+              <div class="form-group">
+                <label class="input-label">Validity dates</label>
+                <input type="text" class="form-input" id="rfq-validity" placeholder="e.g. 2026-06-01 to 2026-12-31">
+              </div>
+            </div>
+
+            <div style="margin-top: 24px; display: flex; justify-content: flex-end; gap: 12px;">
+              <button class="btn btn-secondary" id="btn-rfq-clear">Clear</button>
+              <button class="btn btn-secondary" id="btn-rfq-export"><i class="fa-solid fa-download"></i> Export JSON</button>
+              <button class="btn btn-primary" id="btn-rfq-send-calc"><i class="fa-solid fa-paper-plane"></i> Send to Freight Calculator</button>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- MODULE 2: Freight Calculator Panel -->
+      <section id="freight-calculator-panel" class="module-panel">
+        <div class="calc-grid">
+          
+          <div class="card">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-sliders"></i> Freight Inputs</h3>
+            </div>
+            
+            <div class="form-group">
+              <label class="input-label">Route Lane (Origin - Destination)</label>
+              <input type="text" class="form-input" id="calc-lane" value="Shanghai (CNSHA) to Los Angeles (USLAX)">
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="input-label">Container Type</label>
+                <select class="form-select" id="calc-container-type">
+                  <option value="20GP">20GP</option>
+                  <option value="40GP">40GP</option>
+                  <option value="40HC" selected>40HC</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="input-label">Carrier</label>
+                <select class="form-select" id="calc-carrier">
+                  <option value="MAERSK">MAERSK</option>
+                  <option value="MSC">MSC</option>
+                  <option value="CMA CGM">CMA CGM</option>
+                  <option value="ONE">ONE</option>
+                  <option value="COSCO">COSCO</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="input-label">Seasonality Factor</label>
+                <select class="form-select" id="calc-season">
+                  <option value="standard" selected>Standard Season</option>
+                  <option value="peak">Peak Season (+15%)</option>
+                  <option value="slack">Slack Season (-10%)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="input-label">Bunker Adjustment (BAF)</label>
+                <input type="number" class="form-input" id="calc-baf" value="350">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="input-label">Port Congestion Fee</label>
+                <input type="number" class="form-input" id="calc-congestion-fee" value="150">
+              </div>
+              <div class="form-group">
+                <label class="input-label">Local Surcharges (THC, Doc)</label>
+                <input type="number" class="form-input" id="calc-local-fee" value="200">
+              </div>
+            </div>
+
+            <div class="slider-container mt-4">
+              <div class="slider-labels">
+                <span>Profit Margin</span>
+                <span class="bold text-cyan" id="calc-margin-label">15%</span>
+              </div>
+              <input type="range" class="custom-slider" id="calc-margin-slider" min="5" max="40" value="15">
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 24px;">
+            <div class="results-summary-box">
+              <div class="grid-2">
+                <div class="calc-result-row">
+                  <div>
+                    <span class="input-label" style="display: block;">Base Ocean Freight</span>
+                    <span class="calc-result-val" id="calc-base-ocean">$3,400</span>
+                  </div>
+                </div>
+                <div class="calc-result-row">
+                  <div>
+                    <span class="input-label" style="display: block;">Total Surcharges</span>
+                    <span class="calc-result-val" id="calc-total-surcharges">$700</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="grid-2" style="border-top: 1px solid rgba(255,255,255,0.06); padding-top: 16px;">
+                <div class="calc-result-row">
+                  <div>
+                    <span class="input-label" style="display: block;">All-In Net Cost</span>
+                    <span class="calc-result-val" id="calc-allin-cost">$4,100</span>
+                  </div>
+                </div>
+                <div class="calc-result-row">
+                  <div>
+                    <span class="input-label" style="display: block;">Target Profit ($)</span>
+                    <span class="calc-result-val text-emerald" id="calc-profit-dollar">$615</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="calc-result-row" style="border-top: 1px solid rgba(255,255,255,0.06); padding-top: 16px;">
+                <div>
+                  <span class="input-label" style="display: block;">All-In Selling Price (Quote)</span>
+                  <span class="calc-result-val primary" id="calc-sell-price">$4,715</span>
+                </div>
+                <span class="badge badge-success">Profitable</span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h3><i class="fa-solid fa-chart-line"></i> Lane Bid Comparison vs Historical Bids</h3>
+              </div>
+              <div class="chart-wrapper">
+                <canvas id="historical-bids-chart"></canvas>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- MODULE 3: Container Load Planner Panel -->
+      <section id="container-planner-panel" class="module-panel">
+        <div class="load-planner-grid">
+          
+          <div class="card">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-cube"></i> Cargo Configuration</h3>
+            </div>
+            
+            <div class="form-group">
+              <label class="input-label">Container Size</label>
+              <select class="form-select" id="planner-container-size">
+                <option value="20ft">20ft Dry Cargo Container</option>
+                <option value="40ft" selected>40ft Dry Cargo Container</option>
+              </select>
+            </div>
+
+            <div style="border-top: 1px solid var(--border-color); margin: 12px 0; padding-top: 12px;">
+              <h4 class="input-label mb-4">Item Type 1 (Cartons)</h4>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="input-label">Length (cm)</label>
+                  <input type="number" class="form-input" id="item1-length" value="60">
+                </div>
+                <div class="form-group">
+                  <label class="input-label">Width (cm)</label>
+                  <input type="number" class="form-input" id="item1-width" value="40">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="input-label">Height (cm)</label>
+                  <input type="number" class="form-input" id="item1-height" value="40">
+                </div>
+                <div class="form-group">
+                  <label class="input-label">Weight (kg)</label>
+                  <input type="number" class="form-input" id="item1-weight" value="12">
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="input-label">Total Quantity</label>
+                <input type="number" class="form-input" id="item1-qty" value="450">
+              </div>
+            </div>
+
+            <div style="border-top: 1px solid var(--border-color); margin: 12px 0; padding-top: 12px;">
+              <h4 class="input-label mb-4">Item Type 2 (Pallets)</h4>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="input-label">Length (cm)</label>
+                  <input type="number" class="form-input" id="item2-length" value="120">
+                </div>
+                <div class="form-group">
+                  <label class="input-label">Width (cm)</label>
+                  <input type="number" class="form-input" id="item2-width" value="80">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="input-label">Height (cm)</label>
+                  <input type="number" class="form-input" id="item2-height" value="160">
+                </div>
+                <div class="form-group">
+                  <label class="input-label">Weight (kg)</label>
+                  <input type="number" class="form-input" id="item2-weight" value="250">
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="input-label">Total Quantity</label>
+                <input type="number" class="form-input" id="item2-qty" value="16">
+              </div>
+            </div>
+
+            <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
+              <button class="btn btn-primary" id="btn-planner-pack" style="justify-content: center;"><i class="fa-solid fa-play"></i> Generate Pack Plan</button>
+              <button class="btn btn-secondary" id="btn-planner-reset" style="justify-content: center;">Reset Configuration</button>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 20px;">
+            <div id="canvas-container">
+              <!-- Overlay stats panel -->
+              <div class="canvas-stats-overlay">
+                <div class="overlay-metric">
+                  <span>Space Utilization:</span>
+                  <span class="val accent" id="planner-space-util">-- %</span>
+                </div>
+                <div class="overlay-metric">
+                  <span>Cartons Placed:</span>
+                  <span class="val" id="planner-cartons-fit">0 / 0</span>
+                </div>
+                <div class="overlay-metric">
+                  <span>Pallets Placed:</span>
+                  <span class="val" id="planner-pallets-fit">0 / 0</span>
+                </div>
+                <div class="overlay-metric">
+                  <span>Unused Space Vol:</span>
+                  <span class="val" id="planner-unused-space">-- m³</span>
+                </div>
+                <div class="overlay-metric">
+                  <span>Total Weight:</span>
+                  <span class="val" id="planner-total-weight">-- kg</span>
+                </div>
+                <div class="overlay-metric">
+                  <span>Weight Balance:</span>
+                  <span class="val" id="planner-weight-balance">--</span>
+                </div>
+              </div>
+
+              <!-- Orbit rotation controls overlay -->
+              <div class="canvas-controls-overlay">
+                <button class="btn btn-secondary btn-icon" id="btn-canvas-reset-view" title="Reset Camera View"><i class="fa-solid fa-compress"></i></button>
+                <button class="btn btn-secondary btn-icon" id="btn-canvas-wireframe" title="Toggle Wireframe"><i class="fa-solid fa-border-none"></i></button>
+                <button class="btn btn-secondary btn-icon" id="btn-canvas-rotate" title="Toggle Orbit Rotation"><i class="fa-solid fa-sync fa-spin" style="animation-duration: 4s;"></i></button>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h3><i class="fa-solid fa-circle-info"></i> Instructions</h3>
+              </div>
+              <p class="text-secondary" style="font-size: 0.85rem; line-height: 1.5;">
+                Left Click + Drag to rotate the 3D model. Right Click + Drag to pan. Scroll wheel to zoom in and out.
+                Items are colored based on category (Cartons are colored Cyan/Teal, Pallets are colored Magenta/Purple).
+                The planner automatically sorts and packs cartons and pallets using a 3D greedy bin-packing heuristic solver to maximize space efficiency and verify cargo safety tolerances.
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- MODULE 4: HS Code Finder Panel -->
+      <section id="hs-finder-panel" class="module-panel">
+        <div class="hs-finder-container">
+          
+          <div class="card">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-shield-halved"></i> Customs Tariff Search</h3>
+            </div>
+            
+            <div class="search-bar-wrapper">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" class="search-bar-input" id="hs-search-input" placeholder="Search shipping commodity description (e.g. plastic toys, automobile spare parts, coffee)...">
+            </div>
+            <p class="text-muted mt-4" style="font-size: 0.8rem; margin-top: 10px;">
+              Enter a search query. The AI will look up tariff schedules, active duty rates, excise values, and import restrictions.
+            </p>
+          </div>
+
+          <div class="hs-results-grid" id="hs-results-container">
+            <!-- Dynamically populated results cards -->
+            <div class="card" style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--color-text-secondary);">
+              <i class="fa-solid fa-circle-question" style="font-size: 2.5rem; margin-bottom: 12px; color: var(--color-text-muted);"></i>
+              <p>Type in the search bar above to query customs codes.</p>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- MODULE 5: Demurrage Calculator Panel -->
+      <section id="demurrage-calc-panel" class="module-panel">
+        <div class="demurrage-grid">
+          
+          <div class="card">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-file-invoice"></i> Booking & Arrival Parameters</h3>
+            </div>
+            
+            <div class="form-group">
+              <label class="input-label">Port of Discharge</label>
+              <select class="form-select" id="dem-port">
+                <option value="LAX">Los Angeles (LAX)</option>
+                <option value="RTM">Rotterdam (RTM)</option>
+                <option value="SIN">Singapore (SIN)</option>
+                <option value="NYC">New York (NYC)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="input-label">Shipping Carrier</label>
+              <select class="form-select" id="dem-carrier">
+                <option value="MAERSK">MAERSK Line</option>
+                <option value="MSC">MSC Mediterranean</option>
+                <option value="CMA">CMA CGM Group</option>
+              </select>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="input-label">Allocated Free Days</label>
+                <input type="number" class="form-input" id="dem-free-days" value="5">
+              </div>
+              <div class="form-group">
+                <label class="input-label">Daily Overdue Charge ($)</label>
+                <input type="number" class="form-input" id="dem-daily-rate" value="180">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="input-label">Container Arrival Date</label>
+              <input type="date" class="form-input" id="dem-arrival-date">
+            </div>
+
+            <div class="form-group">
+              <label class="input-label">Expected/Actual Pickup Date</label>
+              <input type="date" class="form-input" id="dem-pickup-date">
+            </div>
+
+            <button class="btn btn-primary mt-4" id="btn-dem-calc" style="width: 100%; justify-content: center;">
+              <i class="fa-solid fa-calculator"></i> Calculate Overdue Fee
+            </button>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 24px;">
+            <div class="card">
+              <div class="card-header">
+                <h3><i class="fa-solid fa-chart-pie"></i> Financial Liability Analysis</h3>
+              </div>
+              
+              <div class="grid-3">
+                <div class="stat-card" style="padding: 16px;">
+                  <div class="stat-details">
+                    <h4>Overdue Period</h4>
+                    <div class="stat-val" id="dem-overdue-days">0 Days</div>
+                  </div>
+                </div>
+                <div class="stat-card" style="padding: 16px;">
+                  <div class="stat-details">
+                    <h4>Est. Demurrage Fee</h4>
+                    <div class="stat-val text-crimson" id="dem-total-fee">$0</div>
+                  </div>
+                </div>
+                <div class="stat-card" style="padding: 16px;">
+                  <div class="stat-details">
+                    <h4>Risk Level</h4>
+                    <div class="stat-val" id="dem-risk-level">--</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Visual timeline bar -->
+              <div class="demurrage-visual-timeline" id="dem-timeline-wrapper">
+                <div class="timeline-segment free-days" id="dem-timeline-free" style="width: 100%;">Free Period</div>
+                <div class="timeline-segment overdue-days" id="dem-timeline-overdue" style="width: 0%; display: none;">Overdue Period</div>
+              </div>
+              <div class="timeline-markers">
+                <span id="marker-arrival">Arrival Date</span>
+                <span id="marker-cutoff">Free Days Cutoff</span>
+                <span id="marker-pickup">Pickup Date</span>
+              </div>
+
+              <!-- Risk warning alerts -->
+              <div class="demurrage-alert-box alert-success" id="dem-alert-container">
+                <i class="fa-solid fa-circle-check"></i>
+                <div class="alert-text-wrapper">
+                  <h5 id="dem-alert-title">Pickup Schedule Safe</h5>
+                  <p id="dem-alert-desc">Container is scheduled for pickup within the allocated free days. No charges will be incurred.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h3><i class="fa-solid fa-chart-column"></i> Demurrage Cumulative Cost Projection</h3>
+              </div>
+              <div class="chart-wrapper">
+                <canvas id="demurrage-cost-chart"></canvas>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- MODULE 6: ETA Predictor Panel -->
+      <section id="eta-predictor-panel" class="module-panel">
+        <div class="eta-grid">
+          
+          <div class="card">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-ship"></i> Voyage Routing</h3>
+            </div>
+            
+            <div class="form-group">
+              <label class="input-label">Vessel Name / IMO</label>
+              <select class="form-select" id="eta-vessel">
+                <option value="ocean_atlas">Ocean Atlas (IMO 9811054)</option>
+                <option value="pacific_crest">Pacific Crest (IMO 9400234)</option>
+                <option value="aurora_express">Aurora Express (IMO 9743912)</option>
+              </select>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="input-label">Departure Port</label>
+                <input type="text" class="form-input" id="eta-departure" value="Shanghai (CNSHA)" readonly>
+              </div>
+              <div class="form-group">
+                <label class="input-label">Destination Port</label>
+                <input type="text" class="form-input" id="eta-destination" value="Los Angeles (USLAX)" readonly>
+              </div>
+            </div>
+
+            <div class="predictor-slider-group">
+              <div class="slider-container mb-4">
+                <div class="slider-labels">
+                  <span>En-Route Weather Impact</span>
+                  <span class="bold text-amber" id="eta-weather-label">Moderate Sea States</span>
+                </div>
+                <input type="range" class="custom-slider" id="eta-weather-slider" min="0" max="2" value="1">
+              </div>
+              
+              <div class="slider-container">
+                <div class="slider-labels">
+                  <span>Destination Port Congestion</span>
+                  <span class="bold text-crimson" id="eta-congestion-label">High Congestion</span>
+                </div>
+                <input type="range" class="custom-slider" id="eta-congestion-slider" min="0" max="2" value="2">
+              </div>
+            </div>
+
+            <button class="btn btn-primary mt-4" id="btn-eta-predict" style="width: 100%; justify-content: center;">
+              <i class="fa-solid fa-circle-radiation"></i> Execute Prediction Run
+            </button>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 24px;">
+            <div class="grid-2">
+              <div class="card vessel-card">
+                <div class="card-header">
+                  <h3><i class="fa-solid fa-radar"></i> Vessel Telemetry</h3>
+                </div>
+                <div class="vessel-identity">
+                  <div class="vessel-avatar"><i class="fa-solid fa-ferry"></i></div>
+                  <div class="vessel-details-row">
+                    <span class="vessel-name-title" id="eta-disp-vessel">Ocean Atlas</span>
+                    <span class="vessel-imo" id="eta-disp-imo">IMO 9811054</span>
+                  </div>
+                </div>
+                
+                <div style="display: flex; flex-direction: column; gap: 10px; font-size: 0.85rem;">
+                  <div class="flex-between">
+                    <span class="text-muted">Current Speed:</span>
+                    <span class="bold">18.4 Knots</span>
+                  </div>
+                  <div class="flex-between">
+                    <span class="text-muted">Draft Depth:</span>
+                    <span class="bold">12.5 meters</span>
+                  </div>
+                  <div class="flex-between">
+                    <span class="text-muted">Route Distance:</span>
+                    <span class="bold">5,700 Nautical Miles</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="predicted-eta-card">
+                <span class="input-label" style="text-transform: uppercase; letter-spacing: 1px;">AI Predicted ETA</span>
+                <span class="predicted-date" id="eta-predicted-date">-- -- ----</span>
+                <div class="flex-between mt-4" style="width: 100%; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px;">
+                  <span class="text-muted" style="font-size: 0.8rem;">Delay Margin:</span>
+                  <span class="bold text-amber" id="eta-delay-deviation">+0.0 days</span>
+                </div>
+                <div class="confidence-meter">
+                  <span class="text-muted" style="font-size: 0.8rem;">Confidence:</span>
+                  <div class="confidence-bar-outer">
+                    <div class="confidence-bar-inner" id="eta-confidence-bar"></div>
+                  </div>
+                  <span class="bold text-emerald" id="eta-confidence-label">92%</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="card voyage-map-card">
+              <div class="card-header">
+                <h3><i class="fa-solid fa-map-location-dot"></i> Live Voyage Path Projection</h3>
+              </div>
+              
+              <div class="voyage-map-placeholder">
+                <div class="map-grid-bg"></div>
+                
+                <!-- Voyage Progress Line -->
+                <div class="map-route-line"></div>
+                <div class="map-route-progress" id="map-route-progress"></div>
+                
+                <!-- Weather Indicator Node -->
+                <div class="map-weather-node" id="map-weather-node">
+                  <i class="fa-solid fa-cloud-sun-rain"></i>
+                  <span id="map-weather-label">Rainy / Windy</span>
+                </div>
+
+                <!-- Origin Port -->
+                <div class="map-port-node origin">
+                  <div class="port-dot"></div>
+                  <span class="port-label">Shanghai (CNSHA)</span>
+                </div>
+
+                <!-- Vessel -->
+                <div class="map-vessel-node" id="map-vessel-node">
+                  <div class="vessel-bubble">Ocean Atlas</div>
+                  <div class="map-vessel-icon"><i class="fa-solid fa-ship"></i></div>
+                </div>
+
+                <!-- Destination Port -->
+                <div class="map-port-node destination">
+                  <div class="port-dot"></div>
+                  <span class="port-label">Los Angeles (USLAX)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+
+  </div>
+
+  <!-- Script Modules -->
+  <script src="modules.js"></script>
+  <script src="load-planner.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
