@@ -10,6 +10,8 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- SheetJS (xlsx.js) CDN for browser-side Excel/CSV parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <!-- Three.js & OrbitControls for 3D Packing Visualizer -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -131,10 +133,31 @@
               <i class="fa-solid fa-file-excel upload-icon"></i>
               <div>
                 <p class="bold">Drag & Drop RFQ Document</p>
-                <p class="text-muted mt-4" style="font-size: 0.8rem;">Supports Excel (.xlsx), PDF, or Email files</p>
+                <p class="text-muted mt-4" style="font-size: 0.8rem;">Supports Excel (.xlsx, .xls), CSV (.csv), PDF, or EML files</p>
               </div>
               <button class="btn btn-secondary" onclick="document.getElementById('rfq-file-input').click()">Browse Files</button>
-              <input type="file" id="rfq-file-input" style="display: none;" accept=".xlsx,.xls,.pdf,.eml,.txt">
+              <input type="file" id="rfq-file-input" style="display: none;" accept=".xlsx,.xls,.csv,.pdf,.eml,.txt">
+            </div>
+
+            <!-- Column Structure Guide Toggle -->
+            <div style="margin-top: 12px;">
+              <button class="btn btn-secondary btn-sm" id="btn-rfq-guide-toggle" style="font-size: 0.75rem; padding: 6px 12px; width: 100%; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.02);">
+                <span><i class="fa-solid fa-circle-info"></i> View Expected Column Headers</span>
+                <i class="fa-solid fa-chevron-down" id="rfq-guide-chevron" style="transition: transform 0.2s ease;"></i>
+              </button>
+              <div id="rfq-columns-guide" style="display: none; padding: 12px; margin-top: 6px; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; font-size: 0.75rem; line-height: 1.45;">
+                <p style="margin-bottom: 6px; font-weight: 600; color: var(--color-cyan);">Fuzzy column recognition scans for:</p>
+                <ul style="list-style-type: none; padding-left: 0; display: flex; flex-direction: column; gap: 4px; color: #94a3b8;">
+                  <li><strong><i class="fa-solid fa-check text-cyan" style="font-size:0.7rem; margin-right:4px;"></i> Port of Loading:</strong> POL, Origin, From, Loading Port</li>
+                  <li><strong><i class="fa-solid fa-check text-cyan" style="font-size:0.7rem; margin-right:4px;"></i> Port of Discharge:</strong> POD, Destination, To, Discharge Port</li>
+                  <li><strong><i class="fa-solid fa-check text-cyan" style="font-size:0.7rem; margin-right:4px;"></i> Container Type:</strong> Container, Equipment, Size, Type, Equip</li>
+                  <li><strong><i class="fa-solid fa-check text-cyan" style="font-size:0.7rem; margin-right:4px;"></i> Volume:</strong> Qty, Quantity, Volume, Containers</li>
+                  <li><strong><i class="fa-solid fa-check text-cyan" style="font-size:0.7rem; margin-right:4px;"></i> Incoterms:</strong> Incoterm, Incoterms, Terms</li>
+                  <li><strong><i class="fa-solid fa-check text-cyan" style="font-size:0.7rem; margin-right:4px;"></i> Commodity:</strong> Commodity, Description, Goods, Cargo</li>
+                  <li><strong><i class="fa-solid fa-check text-cyan" style="font-size:0.7rem; margin-right:4px;"></i> Carrier:</strong> Carrier, Line, Shipping Line</li>
+                  <li><strong><i class="fa-solid fa-check text-cyan" style="font-size:0.7rem; margin-right:4px;"></i> Validity:</strong> Validity, Valid To, Expiry, Dates</li>
+                </ul>
+              </div>
             </div>
 
             <!-- Uploaded files listing -->
@@ -518,10 +541,35 @@
       <section id="demurrage-calc-panel" class="module-panel">
         <div class="demurrage-grid">
           
-          <div class="card">
-            <div class="card-header">
-              <h3><i class="fa-solid fa-file-invoice"></i> Booking & Arrival Parameters</h3>
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            
+            <!-- Historical Demurrage Uploader -->
+            <div class="card">
+              <div class="card-header">
+                <h3><i class="fa-solid fa-cloud-arrow-up"></i> Auto-Calibrate from History</h3>
+              </div>
+              
+              <div class="upload-area" id="dem-drop-zone" style="padding: 16px 12px; min-height: 90px; border-style: dashed; border-width: 1px; border-radius: 8px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: background 0.2s ease;">
+                <i class="fa-solid fa-file-csv upload-icon" style="font-size: 1.5rem; color: var(--color-cyan);"></i>
+                <div>
+                  <p class="bold" style="font-size: 0.85rem; margin: 0;">Upload Historical Demurrage Logs</p>
+                  <p class="text-secondary" style="font-size: 0.75rem; margin: 2px 0 0 0;">Supports Excel (.xlsx, .xls) and CSV (.csv)</p>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); document.getElementById('dem-file-input').click()" style="font-size: 0.75rem; padding: 4px 8px;">Browse Files</button>
+                <input type="file" id="dem-file-input" style="display: none;" accept=".xlsx,.xls,.csv">
+              </div>
+              
+              <div id="dem-upload-status" style="margin-top: 8px; font-size: 0.75rem; padding: 8px 12px; border-radius: 6px; display: none;"></div>
+              
+              <div style="margin-top: 8px; text-align: center;">
+                <a href="#" id="dem-download-template" style="font-size: 0.75rem; color: var(--color-cyan); text-decoration: underline; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-download"></i> Download Sample Demurrage CSV</a>
+              </div>
             </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h3><i class="fa-solid fa-file-invoice"></i> Booking & Arrival Parameters</h3>
+              </div>
             
             <div class="form-group">
               <label class="input-label">Port of Discharge</label>
@@ -676,10 +724,26 @@
               </div>
             </div>
 
+            <!-- Live API Toggle Switch -->
+            <div class="form-group" style="margin: 16px 0; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 16px;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                  <span class="input-label" style="display: block; margin: 0; font-size: 0.85rem; font-weight: 600;">Live API Telemetry Feed</span>
+                  <span class="text-secondary" style="font-size: 0.75rem; display: block; margin-top: 2px;">Connect with Spire AIS & Weather Map APIs</span>
+                </div>
+                <label class="switch-container">
+                  <input type="checkbox" id="eta-api-toggle">
+                  <span class="slider round"></span>
+                </label>
+              </div>
+            </div>
+
             <button class="btn btn-primary mt-4" id="btn-eta-predict" style="width: 100%; justify-content: center;">
               <i class="fa-solid fa-circle-radiation"></i> Execute Prediction Run
             </button>
           </div>
+          
+          </div><!-- End Left Col Wrapper -->
 
           <div style="display: flex; flex-direction: column; gap: 24px;">
             <div class="grid-2">
@@ -698,11 +762,11 @@
                 <div style="display: flex; flex-direction: column; gap: 10px; font-size: 0.85rem;">
                   <div class="flex-between">
                     <span class="text-muted">Current Speed:</span>
-                    <span class="bold">18.4 Knots</span>
+                    <span class="bold" id="eta-disp-speed">18.4 Knots</span>
                   </div>
                   <div class="flex-between">
                     <span class="text-muted">Draft Depth:</span>
-                    <span class="bold">12.5 meters</span>
+                    <span class="bold" id="eta-disp-draft">12.5 meters</span>
                   </div>
                   <div class="flex-between">
                     <span class="text-muted">Route Distance:</span>
@@ -728,7 +792,25 @@
               </div>
             </div>
 
-            <div class="card voyage-map-card">
+          <!-- Live API Telemetry Feed Debug Console -->
+          <div class="card" id="eta-api-console-card" style="display: none;">
+            <div class="card-header" style="display: flex; align-items: center; justify-content: space-between;">
+              <h3><i class="fa-solid fa-terminal" style="color: var(--color-cyan);"></i> Live API Developer Console</h3>
+              <span class="badge badge-info" style="font-size: 0.65rem; background: rgba(0,240,255,0.1); border: 1px solid var(--color-cyan); color: var(--color-cyan);">Streaming Telemetry</span>
+            </div>
+            <div class="api-console-grid">
+              <div class="api-console-col">
+                <div class="api-console-title"><i class="fa-solid fa-satellite-dish"></i> Spire AIS API Response (JSON)</div>
+                <pre class="api-debug-payload" id="eta-api-ais-payload">Loading...</pre>
+              </div>
+              <div class="api-console-col">
+                <div class="api-console-title"><i class="fa-solid fa-cloud-sun"></i> OpenWeatherMap Marine API (JSON)</div>
+                <pre class="api-debug-payload" id="eta-api-weather-payload">Loading...</pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="card voyage-map-card">
               <div class="card-header">
                 <h3><i class="fa-solid fa-map-location-dot"></i> Live Voyage Path Projection</h3>
               </div>

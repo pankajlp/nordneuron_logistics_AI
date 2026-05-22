@@ -7,12 +7,38 @@ let cargoGroup = null;
 let isWireframeMode = false;
 
 document.addEventListener("DOMContentLoaded", () => {
-  initThreeJS();
+  try {
+    initThreeJS();
+  } catch (error) {
+    console.error("[NordNeuron Error] Failed to initialize 3D Viewport:", error);
+    const container = document.getElementById("canvas-container");
+    if (container) {
+      container.innerHTML = `
+        <div class="webgl-error-overlay" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; width: 100%; padding: 24px; text-align: center; color: var(--color-crimson); z-index: 10; position: relative;">
+          <i class="fa-solid fa-triangle-exclamation" style="font-size: 2rem; margin-bottom: 12px;"></i>
+          <h4 class="bold" style="font-size: 0.95rem; margin-bottom: 6px;">3D Visualizer Offline / Unavailable</h4>
+          <p class="text-secondary" style="font-size: 0.8rem; margin: 0; line-height: 1.45; max-width: 280px; color: #94a3b8;">
+            WebGL failed to load or Three.js libraries are blocked/offline. Cargo calculations will still function normally.
+          </p>
+        </div>
+      `;
+    }
+  }
+  
+  // Initialize events regardless of WebGL success so calculations still work
   initPlannerEvents();
+  
+  // Populate the calculations on load
+  updatePlannerScene();
 });
 
 // Initialize Three.js Scene, Camera, Renderer, and Controls
 function initThreeJS() {
+  // Check if THREE is defined
+  if (typeof THREE === "undefined") {
+    throw new Error("Three.js library not loaded.");
+  }
+
   const container = document.getElementById("canvas-container");
   if (!container) return;
 
@@ -20,10 +46,14 @@ function initThreeJS() {
   plannerScene = new THREE.Scene();
   plannerScene.background = new THREE.Color(0x05070d);
 
+  // Safe client dimension lookup (prevents aspect ratio of 0/0 = NaN on hidden tabs)
+  const width = container.clientWidth || 800;
+  const height = container.clientHeight || 500;
+
   // Camera
   plannerCamera = new THREE.PerspectiveCamera(
     45,
-    container.clientWidth / container.clientHeight,
+    width / height,
     0.1,
     100
   );
@@ -31,12 +61,15 @@ function initThreeJS() {
 
   // Renderer
   plannerRenderer = new THREE.WebGLRenderer({ antialias: true });
-  plannerRenderer.setSize(container.clientWidth, container.clientHeight);
+  plannerRenderer.setSize(width, height);
   plannerRenderer.setPixelRatio(window.devicePixelRatio);
   plannerRenderer.shadowMap.enabled = true;
   container.appendChild(plannerRenderer.domElement);
 
-  // Controls
+  // Controls (Check if OrbitControls is defined)
+  if (typeof THREE.OrbitControls === "undefined") {
+    throw new Error("Three.OrbitControls library not loaded.");
+  }
   plannerControls = new THREE.OrbitControls(plannerCamera, plannerRenderer.domElement);
   plannerControls.enableDamping = true;
   plannerControls.dampingFactor = 0.05;
@@ -70,13 +103,12 @@ function initThreeJS() {
 
   // Start animation loop
   animate();
-
-  // Initial draw
-  updatePlannerScene();
 }
 
 function resetCameraPosition() {
-  plannerCamera.position.set(12, 8, 12);
+  if (plannerCamera) {
+    plannerCamera.position.set(12, 8, 12);
+  }
   if (plannerControls) {
     plannerControls.target.set(0, 0, 0);
     plannerControls.update();
@@ -111,13 +143,17 @@ window.handleContainerPlannerResize = () => {
 // PACKING ALGORITHM & SCENE BUILDER
 // =========================================================================
 function updatePlannerScene() {
-  // Clear existing meshes
-  if (containerMesh) {
-    plannerScene.remove(containerMesh);
-  }
-  while (cargoGroup.children.length > 0) {
-    const obj = cargoGroup.children[0];
-    cargoGroup.remove(obj);
+  const hasThree = (typeof THREE !== "undefined" && plannerScene && cargoGroup);
+
+  if (hasThree) {
+    // Clear existing meshes
+    if (containerMesh) {
+      plannerScene.remove(containerMesh);
+    }
+    while (cargoGroup.children.length > 0) {
+      const obj = cargoGroup.children[0];
+      cargoGroup.remove(obj);
+    }
   }
 
   // Get inputs
@@ -156,7 +192,14 @@ function updatePlannerScene() {
   const result = run3DPackingHeuristic(cL, cW, cH, boxDim, palletDim);
 
   // Render placed items into Three.js Scene
-  renderCargoItems(result.placedItems, cL, cW, cH);
+  if (hasThree) {
+    try {
+      buildContainerMesh(cL, cW, cH);
+      renderCargoItems(result.placedItems, cL, cW, cH);
+    } catch (e) {
+      console.warn("Skipping 3D render due to WebGL issues:", e);
+    }
+  }
 
   // Update DOM elements with calculated metrics
   document.getElementById("planner-space-util").textContent = `${result.utilization.toFixed(1)}%`;
@@ -488,7 +531,9 @@ function initPlannerEvents() {
 
   if (btnRotate) {
     btnRotate.addEventListener("click", () => {
-      plannerControls.autoRotate = !plannerControls.autoRotate;
+      if (plannerControls) {
+        plannerControls.autoRotate = !plannerControls.autoRotate;
+      }
       btnRotate.classList.toggle("btn-primary");
       btnRotate.classList.toggle("btn-secondary");
     });

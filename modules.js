@@ -1,13 +1,21 @@
 /* modules.js - NordNeuron Logistics AI Modules Core Business Logic */
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Initialize all modules
-  initRFQAnalyzer();
-  initFreightCalculator();
-  initHSCodeFinder();
-  initDemurrageCalculator();
-  initETAPredictor();
+  // Initialize all modules with safety wrappers to prevent CDN failures from cascading
+  safeInit("RFQ Analyzer", initRFQAnalyzer);
+  safeInit("Freight Calculator", initFreightCalculator);
+  safeInit("HS Code Finder", initHSCodeFinder);
+  safeInit("Demurrage Calculator", initDemurrageCalculator);
+  safeInit("ETA Predictor", initETAPredictor);
 });
+
+function safeInit(name, initFn) {
+  try {
+    initFn();
+  } catch (error) {
+    console.error(`[NordNeuron Error] Failed to initialize ${name}:`, error);
+  }
+}
 
 // =========================================================================
 // MODULE 1: RFQ ANALYZER
@@ -106,7 +114,7 @@ function initRFQAnalyzer() {
     fileList.innerHTML = `
       <div class="file-item">
         <div class="file-item-info">
-          <i class="fa-solid fa-file-excel"></i>
+          <i class="fa-solid fa-file-excel" style="color: var(--color-cyan);"></i>
           <div>
             <div class="file-name">${file.name}</div>
             <div class="file-size">${(file.size / 1024).toFixed(1)} KB</div>
@@ -118,16 +126,144 @@ function initRFQAnalyzer() {
 
     document.getElementById("btn-remove-file").addEventListener("click", () => {
       fileList.innerHTML = "";
-      progressWrapper.style.style = "none";
+      progressWrapper.style.display = "none";
       clearFields();
       badge.textContent = "Draft";
       badge.className = "badge badge-info";
     });
 
-    simulateExtraction(file.name);
+    const isExcelOrCsv = file.name.endsWith(".xlsx") || file.name.endsWith(".xls") || file.name.endsWith(".csv");
+    
+    if (isExcelOrCsv && typeof XLSX !== "undefined") {
+      parseRFQFile(file, (err, res) => {
+        if (err) {
+          console.warn("SheetJS failed parsing RFQ file, falling back to mock:", err);
+          simulateExtraction(file.name, null);
+        } else {
+          simulateExtraction(file.name, res);
+        }
+      });
+    } else {
+      simulateExtraction(file.name, null);
+    }
   }
 
-  function simulateExtraction(filename) {
+  function parseRFQFile(file, callback) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        // Convert worksheet rows to array of arrays
+        const rows = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+        if (rows.length < 2) {
+          throw new Error("No data records found in worksheet.");
+        }
+        
+        // Header recognition with fuzzy matching regex
+        const fuzzyMappings = {
+          pol: [/pol/i, /port.*load/i, /origin/i, /from/i, /loading/i],
+          pod: [/pod/i, /port.*dis/i, /destination/i, /to/i, /discharge/i],
+          container: [/container/i, /equipment/i, /size/i, /type/i, /equip/i],
+          volume: [/volume/i, /qty/i, /quantity/i, /containers/i, /vol/i],
+          incoterms: [/incoterm/i, /incoterms/i, /terms/i, /shipping.*terms/i],
+          commodity: [/commodity/i, /description/i, /goods/i, /cargo/i, /item/i],
+          carrier: [/carrier/i, /line/i, /shipping.*line/i, /operator/i],
+          validity: [/valid/i, /expiry/i, /date/i, /expiration/i, /valid.*to/i]
+        };
+
+        let headerRowIndex = -1;
+        for (let r = 0; r < Math.min(rows.length, 10); r++) {
+          const row = rows[r];
+          let score = 0;
+          row.forEach(cell => {
+            if (cell && typeof cell === 'string') {
+              Object.values(fuzzyMappings).forEach(regexes => {
+                if (regexes.some(rx => rx.test(cell))) score++;
+              });
+            }
+          });
+          if (score >= 2) {
+            headerRowIndex = r;
+            break;
+          }
+        }
+
+        if (headerRowIndex === -1) headerRowIndex = 0;
+        
+        const headers = rows[headerRowIndex].map(h => String(h || '').trim().toLowerCase());
+        const dataRows = rows.slice(headerRowIndex + 1).filter(row => row.length > 0);
+        
+        if (dataRows.length === 0) {
+          throw new Error("No rows found below headers.");
+        }
+
+        const colIndices = {};
+        Object.keys(fuzzyMappings).forEach(field => {
+          const regexes = fuzzyMappings[field];
+          colIndices[field] = headers.findIndex(h => regexes.some(rx => rx.test(h)));
+        });
+
+        const firstDataRow = dataRows[0];
+        const extracted = {};
+        Object.keys(colIndices).forEach(field => {
+          const idx = colIndices[field];
+          extracted[field] = (idx !== -1 && firstDataRow[idx] !== undefined) ? firstDataRow[idx] : "";
+        });
+
+        // Normalize output results
+        if (extracted.pol) {
+          extracted.pol = String(extracted.pol);
+          if (!extracted.pol.includes("(")) {
+            if (extracted.pol.toLowerCase().includes("shanghai")) extracted.pol = "Shanghai (CNSHA)";
+            else if (extracted.pol.toLowerCase().includes("shenzhen")) extracted.pol = "Shenzhen (CNSZX)";
+            else if (extracted.pol.toLowerCase().includes("ningbo")) extracted.pol = "Ningbo (CNNGB)";
+          }
+        }
+        if (extracted.pod) {
+          extracted.pod = String(extracted.pod);
+          if (!extracted.pod.includes("(")) {
+            if (extracted.pod.toLowerCase().includes("angeles") || extracted.pod.toLowerCase().includes("lax")) extracted.pod = "Los Angeles (USLAX)";
+            else if (extracted.pod.toLowerCase().includes("rotterdam")) extracted.pod = "Rotterdam (NLRTM)";
+            else if (extracted.pod.toLowerCase().includes("singapore")) extracted.pod = "Singapore (SGSIN)";
+            else if (extracted.pod.toLowerCase().includes("york")) extracted.pod = "New York (USNYC)";
+          }
+        }
+        if (extracted.container) {
+          extracted.container = String(extracted.container).toUpperCase().trim();
+          if (extracted.container.includes("40") && (extracted.container.includes("HC") || extracted.container.includes("HIGH"))) extracted.container = "40HC";
+          else if (extracted.container.includes("40") && (extracted.container.includes("GP") || extracted.container.includes("STANDARD"))) extracted.container = "40GP";
+          else if (extracted.container.includes("20")) extracted.container = "20GP";
+          else if (extracted.container.includes("45")) extracted.container = "45HC";
+        }
+        if (extracted.volume) {
+          extracted.volume = parseInt(extracted.volume) || "";
+        }
+        if (extracted.incoterms) {
+          extracted.incoterms = String(extracted.incoterms).toUpperCase().trim();
+          const validIncoterms = ["FOB", "CIF", "EXW", "DDP", "FCA", "DAP"];
+          const matched = validIncoterms.find(v => extracted.incoterms.includes(v));
+          extracted.incoterms = matched || "FOB";
+        }
+
+        callback(null, {
+          data: extracted,
+          totalRows: dataRows.length
+        });
+      } catch (err) {
+        callback(err, null);
+      }
+    };
+    reader.onerror = function() {
+      callback(new Error("FileReader failed."), null);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function simulateExtraction(filename, parsedResult) {
     progressWrapper.style.display = "block";
     badge.textContent = "Analyzing...";
     badge.className = "badge badge-warning";
@@ -158,32 +294,49 @@ function initRFQAnalyzer() {
         steps[currentStep].querySelector("i").className = "fa-solid fa-circle-notch fa-spin";
       } else {
         clearInterval(interval);
-        // Fill data
-        const filenameLower = filename.toLowerCase();
-        let matched = mockExtractions.find(me => me.keywords.some(k => filenameLower.includes(k)));
-        if (!matched) matched = mockExtractions.find(me => me.keywords.includes("default"));
-
+        
         setTimeout(() => {
-          fields.pol.value = matched.data.pol;
-          fields.pod.value = matched.data.pod;
-          fields.container.value = matched.data.container;
-          fields.volume.value = matched.data.volume;
-          fields.incoterms.value = matched.data.incoterms;
-          fields.commodity.value = matched.data.commodity;
-          fields.carrier.value = matched.data.carrier;
-          fields.validity.value = matched.data.validity;
+          if (parsedResult && parsedResult.data) {
+            const d = parsedResult.data;
+            fields.pol.value = d.pol || "";
+            fields.pod.value = d.pod || "";
+            fields.container.value = d.container || "40HC";
+            fields.volume.value = d.volume || "";
+            fields.incoterms.value = d.incoterms || "FOB";
+            fields.commodity.value = d.commodity || "";
+            fields.carrier.value = d.carrier || "";
+            fields.validity.value = d.validity || "";
 
-          badge.textContent = "AI Extracted";
-          badge.className = "badge badge-success";
+            badge.textContent = `Extracted (${parsedResult.totalRows} Lanes)`;
+            badge.className = "badge badge-success";
+          } else {
+            // Mock data fallback
+            const filenameLower = filename.toLowerCase();
+            let matched = mockExtractions.find(me => me.keywords.some(k => filenameLower.includes(k)));
+            if (!matched) matched = mockExtractions.find(me => me.keywords.includes("default"));
+
+            fields.pol.value = matched.data.pol;
+            fields.pod.value = matched.data.pod;
+            fields.container.value = matched.data.container;
+            fields.volume.value = matched.data.volume;
+            fields.incoterms.value = matched.data.incoterms;
+            fields.commodity.value = matched.data.commodity;
+            fields.carrier.value = matched.data.carrier;
+            fields.validity.value = matched.data.validity;
+
+            badge.textContent = "AI Extracted";
+            badge.className = "badge badge-success";
+          }
+          
           progressWrapper.style.display = "none";
 
           // Update global stats
           if (typeof window.updateGlobalStats === "function") {
             window.updateGlobalStats({ rfqs: 5 });
           }
-        }, 300);
+        }, 200);
       }
-    }, 800);
+    }, 400);
   }
 
   function clearFields() {
@@ -238,6 +391,19 @@ function initRFQAnalyzer() {
     const calcTab = document.querySelector('.sidebar .nav-item[data-tab="freight-calculator"]');
     if (calcTab) calcTab.click();
   });
+
+  // Expected column guide toggle
+  const guideBtn = document.getElementById("btn-rfq-guide-toggle");
+  const guidePanel = document.getElementById("rfq-columns-guide");
+  const guideChevron = document.getElementById("rfq-guide-chevron");
+  
+  if (guideBtn && guidePanel && guideChevron) {
+    guideBtn.addEventListener("click", () => {
+      const isHidden = guidePanel.style.display === "none";
+      guidePanel.style.display = isHidden ? "block" : "none";
+      guideChevron.style.transform = isHidden ? "rotate(180deg)" : "rotate(0deg)";
+    });
+  }
 }
 
 
@@ -325,7 +491,24 @@ function initFreightCalculator() {
 
   // Load and render Chart
   function updateComparisonChart(currentQuote, currentCost) {
-    const ctx = document.getElementById("historical-bids-chart").getContext("2d");
+    const chartCanvas = document.getElementById("historical-bids-chart");
+    if (!chartCanvas) return;
+
+    if (typeof Chart === "undefined") {
+      const parent = chartCanvas.parentElement;
+      if (parent) {
+        parent.innerHTML = `
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--color-text-secondary); text-align: center; font-size: 0.8rem;">
+            <i class="fa-solid fa-chart-line" style="font-size: 1.8rem; margin-bottom: 8px; color: var(--color-text-muted);"></i>
+            <span class="bold">Historical Chart Offline</span>
+            <span style="font-size:0.75rem; color:var(--color-text-muted); margin-top:2px;">Chart.js library is blocked/offline</span>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    const ctx = chartCanvas.getContext("2d");
     
     // Mock historical rates
     const historicalQuotes = [
@@ -711,8 +894,163 @@ function initDemurrageCalculator() {
   });
   document.getElementById("btn-dem-calc").addEventListener("click", runDemurrageMath);
 
+  // Demurrage historical uploader logic
+  const demDropZone = document.getElementById("dem-drop-zone");
+  const demFileInput = document.getElementById("dem-file-input");
+  const demStatus = document.getElementById("dem-upload-status");
+  const demDownloadTemplate = document.getElementById("dem-download-template");
+
+  if (demDropZone && demFileInput) {
+    ["dragenter", "dragover"].forEach(eventName => {
+      demDropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        demDropZone.style.borderColor = "var(--color-cyan)";
+        demDropZone.style.background = "rgba(0, 240, 255, 0.04)";
+      }, false);
+    });
+
+    ["dragleave", "drop"].forEach(eventName => {
+      demDropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        demDropZone.style.borderColor = "";
+        demDropZone.style.background = "";
+      }, false);
+    });
+
+    demDropZone.addEventListener("drop", (e) => {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      if (files.length > 0) handleDemurrageFile(files[0]);
+    });
+
+    demDropZone.addEventListener("click", () => {
+      demFileInput.click();
+    });
+
+    demFileInput.addEventListener("change", function() {
+      if (this.files.length > 0) handleDemurrageFile(this.files[0]);
+    });
+  }
+
+  if (demDownloadTemplate) {
+    demDownloadTemplate.addEventListener("click", (e) => {
+      e.preventDefault();
+      const csvContent = "Port,Carrier,Arrival Date,Pickup Date,Free Days,Daily Rate,Demurrage Paid\n" +
+                         "LAX,MAERSK,2026-05-01,2026-05-10,5,150,600\n" +
+                         "LAX,MSC,2026-05-02,2026-05-05,5,180,0\n" +
+                         "NYC,CMA,2026-04-10,2026-04-20,7,200,600\n" +
+                         "SIN,MAERSK,2026-04-15,2026-04-18,4,120,0\n" +
+                         "RTM,MSC,2026-04-01,2026-04-12,5,160,1120";
+      const blob = new Blob([csvContent], {type: "text/csv;charset=utf-8;"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "sample_demurrage_history.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  function handleDemurrageFile(file) {
+    if (!file) return;
+    
+    demStatus.style.display = "block";
+    demStatus.style.background = "rgba(255, 255, 255, 0.04)";
+    demStatus.style.color = "var(--color-text-secondary)";
+    demStatus.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Parsing historical log: ${file.name}...`;
+
+    if (typeof XLSX === "undefined") {
+      setTimeout(() => {
+        demStatus.style.background = "rgba(255, 23, 68, 0.1)";
+        demStatus.style.color = "#ff8a9a";
+        demStatus.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Error: SheetJS library offline. Cannot parse Excel/CSV.`;
+      }, 500);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        const rows = XLSX.utils.sheet_to_json(worksheet);
+        if (rows.length === 0) {
+          throw new Error("No data records found in file.");
+        }
+
+        let freeDaysSum = 0;
+        let freeDaysCount = 0;
+        let rateSum = 0;
+        let rateCount = 0;
+
+        const freeDaysRegex = /free.*day|free.*period|allowance/i;
+        const rateRegex = /daily.*rate|overdue.*rate|charge.*day|rate/i;
+
+        rows.forEach(row => {
+          Object.keys(row).forEach(key => {
+            const val = parseFloat(row[key]);
+            if (!isNaN(val)) {
+              if (freeDaysRegex.test(key)) {
+                freeDaysSum += val;
+                freeDaysCount++;
+              } else if (rateRegex.test(key)) {
+                rateSum += val;
+                rateCount++;
+              }
+            }
+          });
+        });
+
+        const avgFreeDays = freeDaysCount > 0 ? Math.round(freeDaysSum / freeDaysCount) : 5;
+        const avgRate = rateCount > 0 ? Math.round(rateSum / rateCount) : 180;
+
+        setTimeout(() => {
+          inputs.freeDays.value = avgFreeDays;
+          inputs.rate.value = avgRate;
+          
+          demStatus.style.background = "rgba(0, 230, 118, 0.15)";
+          demStatus.style.color = "#a7ffeb";
+          demStatus.innerHTML = `<i class="fa-solid fa-circle-check"></i> Calibrated successfully! Loaded ${rows.length} rows.<br><strong>Avg Free Days:</strong> ${avgFreeDays} | <strong>Avg Rate:</strong> $${avgRate}/day`;
+          
+          runDemurrageMath();
+        }, 500);
+      } catch (err) {
+        console.error(err);
+        demStatus.style.background = "rgba(255, 23, 68, 0.1)";
+        demStatus.style.color = "#ff8a9a";
+        demStatus.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Error parsing file: ${err.message}`;
+      }
+    };
+    reader.onerror = function() {
+      demStatus.style.background = "rgba(255, 23, 68, 0.1)";
+      demStatus.style.color = "#ff8a9a";
+      demStatus.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Error reading file.`;
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
   function updateDemurrageChart(costProjection, freeDays) {
-    const ctx = document.getElementById("demurrage-cost-chart").getContext("2d");
+    const chartCanvas = document.getElementById("demurrage-cost-chart");
+    if (!chartCanvas) return;
+
+    if (typeof Chart === "undefined") {
+      const parent = chartCanvas.parentElement;
+      if (parent) {
+        parent.innerHTML = `
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--color-text-secondary); text-align: center; font-size: 0.8rem;">
+            <i class="fa-solid fa-chart-column" style="font-size: 1.8rem; margin-bottom: 8px; color: var(--color-text-muted);"></i>
+            <span class="bold">Cost Chart Offline</span>
+            <span style="font-size:0.75rem; color:var(--color-text-muted); margin-top:2px;">Chart.js library is blocked/offline</span>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    const ctx = chartCanvas.getContext("2d");
     const labels = Array.from({length: 15}, (_, i) => `Day ${i+1}`);
     
     // Highlight free vs overdue background colors
@@ -831,6 +1169,94 @@ function initETAPredictor() {
   const weatherLabels = ["Optimal Sea Conditions", "Moderate Sea States", "Severe Cyclone Alert"];
   const congestionLabels = ["Low Waiting Times", "Medium Berthing Lag", "High Congestion / Jammed"];
 
+  const apiToggle = document.getElementById("eta-api-toggle");
+  const apiConsoleCard = document.getElementById("eta-api-console-card");
+  const apiAisPayload = document.getElementById("eta-api-ais-payload");
+  const apiWeatherPayload = document.getElementById("eta-api-weather-payload");
+
+  let apiTimer = null;
+
+  if (apiToggle) {
+    apiToggle.addEventListener("change", function() {
+      if (this.checked) {
+        if (apiConsoleCard) apiConsoleCard.style.display = "block";
+        startTelemetryStream();
+      } else {
+        if (apiConsoleCard) apiConsoleCard.style.display = "none";
+        if (apiTimer) clearInterval(apiTimer);
+        // Reset speed and draft values back to normal
+        const speedDisp = document.getElementById("eta-disp-speed");
+        const draftDisp = document.getElementById("eta-disp-draft");
+        if (speedDisp) speedDisp.textContent = "18.4 Knots";
+        if (draftDisp) draftDisp.textContent = "12.5 meters";
+        runPrediction();
+      }
+    });
+  }
+
+  function startTelemetryStream() {
+    updateTelemetryLogs();
+    if (apiTimer) clearInterval(apiTimer);
+    apiTimer = setInterval(updateTelemetryLogs, 3000);
+  }
+
+  function updateTelemetryLogs() {
+    if (!apiToggle || !apiToggle.checked) return;
+
+    const selectedVesselKey = inputs.vessel.value;
+    const vessel = vesselsDB[selectedVesselKey] || vesselsDB["ocean_atlas"];
+
+    // Fluctuate speed and draft depth for realism
+    const lat = (34.05 - (1 - vessel.progressPct/100) * 3 + (Math.random() - 0.5) * 0.05).toFixed(4);
+    const lon = (-118.24 + (1 - vessel.progressPct/100) * 5 + (Math.random() - 0.5) * 0.05).toFixed(4);
+    const liveSpeed = (17.5 + Math.random() * 2).toFixed(1);
+    const draftDepth = (12.2 + Math.random() * 0.5).toFixed(1);
+    
+    const wVal = parseInt(inputs.weather.value);
+    const weatherConditions = [
+      { status: "Optimal", waves: "0.8m", wind: "8 knots", windDir: "ENE" },
+      { status: "Moderate", waves: "2.4m", wind: "22 knots", windDir: "SW" },
+      { status: "Severe Cyclone", waves: "6.8m", wind: "52 knots", windDir: "WNW" }
+    ];
+    const liveWeather = weatherConditions[wVal];
+
+    const aisJSON = {
+      vessel_imo: vessel.imo.replace("IMO ", ""),
+      vessel_name: vessel.name,
+      telemetry: {
+        timestamp: new Date().toISOString(),
+        coordinates: { lat: parseFloat(lat), lon: parseFloat(lon) },
+        heading_degrees: 72.4,
+        speed_knots: parseFloat(liveSpeed),
+        draft_meters: parseFloat(draftDepth)
+      },
+      route_context: {
+        origin: vessel.origin,
+        destination: vessel.destination,
+        voyage_progress_pct: vessel.progressPct,
+        nautical_miles_remaining: Math.round(5700 * (1 - vessel.progressPct/100))
+      }
+    };
+
+    const weatherJSON = {
+      query_coordinates: { lat: parseFloat(lat), lon: parseFloat(lon) },
+      marine_forecast: {
+        sea_state: liveWeather.status,
+        wave_height_meters: parseFloat(liveWeather.waves),
+        wind_speed_knots: parseFloat(liveWeather.wind),
+        wind_direction: liveWeather.windDir,
+        temperature_c: 18.5,
+        visibility_miles: wVal === 2 ? 1.2 : 10.0
+      }
+    };
+
+    if (apiAisPayload) apiAisPayload.textContent = JSON.stringify(aisJSON, null, 2);
+    if (apiWeatherPayload) apiWeatherPayload.textContent = JSON.stringify(weatherJSON, null, 2);
+
+    // Live update parameters on maps
+    runPrediction();
+  }
+
   function runPrediction() {
     const selectedVesselKey = inputs.vessel.value;
     const vessel = vesselsDB[selectedVesselKey] || vesselsDB["ocean_atlas"];
@@ -839,36 +1265,63 @@ function initETAPredictor() {
     outputs.vesselName.textContent = vessel.name;
     outputs.vesselImo.textContent = vessel.imo;
 
+    const isLive = apiToggle && apiToggle.checked;
+
     // Read parameters
     const weatherVal = parseInt(inputs.weather.value);
     const congestionVal = parseInt(inputs.congestion.value);
 
     // Update parameter text tags
-    document.getElementById("eta-weather-label").textContent = weatherLabels[weatherVal];
-    document.getElementById("eta-weather-label").className = `bold ` + (weatherVal === 0 ? "text-emerald" : (weatherVal === 1 ? "text-amber" : "text-crimson"));
+    const wLabel = document.getElementById("eta-weather-label");
+    if (wLabel) {
+      wLabel.textContent = weatherLabels[weatherVal];
+      wLabel.className = `bold ` + (weatherVal === 0 ? "text-emerald" : (weatherVal === 1 ? "text-amber" : "text-crimson"));
+    }
     
-    document.getElementById("eta-congestion-label").textContent = congestionLabels[congestionVal];
-    document.getElementById("eta-congestion-label").className = `bold ` + (congestionVal === 0 ? "text-emerald" : (congestionVal === 1 ? "text-amber" : "text-crimson"));
+    const cLabel = document.getElementById("eta-congestion-label");
+    if (cLabel) {
+      cLabel.textContent = congestionLabels[congestionVal];
+      cLabel.className = `bold ` + (congestionVal === 0 ? "text-emerald" : (congestionVal === 1 ? "text-amber" : "text-crimson"));
+    }
 
     // Delay computation
     let delayDays = 0;
     
-    // Weather impacts: Optimal: 0 days, Moderate: +1.2 days, Cyclone: +4.5 days
     if (weatherVal === 1) delayDays += 1.2;
     else if (weatherVal === 2) delayDays += 4.5;
 
-    // Congestion impacts: Low: 0.2 days, Medium: +1.5 days, High: +3.8 days
     if (congestionVal === 0) delayDays += 0.2;
     else if (congestionVal === 1) delayDays += 1.5;
     else if (congestionVal === 2) delayDays += 3.8;
 
-    // Calculate dates
+    // Calculations based on live API parameters if enabled
+    let baseTransit = vessel.baseTransitDays;
+    if (isLive && apiAisPayload) {
+      try {
+        const payloadText = apiAisPayload.textContent;
+        if (payloadText && payloadText !== "Loading...") {
+          const payload = JSON.parse(payloadText);
+          const currentSpeed = payload.telemetry.speed_knots;
+          const speedDisp = document.getElementById("eta-disp-speed");
+          const draftDisp = document.getElementById("eta-disp-draft");
+          if (speedDisp) speedDisp.textContent = `${currentSpeed} Knots`;
+          if (draftDisp) draftDisp.textContent = `${payload.telemetry.draft_meters} meters`;
+          
+          // Re-calculate base days based on live speed and distance remaining
+          // miles_remaining / (speed * 24) + days_elapsed (which is 9 days in our mock)
+          const distRemaining = payload.route_context.nautical_miles_remaining;
+          baseTransit = 9 + (distRemaining / (currentSpeed * 24));
+        }
+      } catch (e) {
+        console.warn("Error parsing live AIS telemetry:", e);
+      }
+    }
+
     const arrivalDate = new Date();
-    // Simulate vessel departure 9 days ago
     const departureDate = new Date();
     departureDate.setDate(departureDate.getDate() - 9);
 
-    const totalTransit = vessel.baseTransitDays + delayDays;
+    const totalTransit = baseTransit + delayDays;
     arrivalDate.setTime(departureDate.getTime() + (totalTransit * 24 * 60 * 60 * 1000));
 
     // Update UI numbers
@@ -881,8 +1334,6 @@ function initETAPredictor() {
     outputs.delayDeviation.textContent = `+${delayDays.toFixed(1)} day${delayDays !== 1 ? 's' : ''}`;
     outputs.delayDeviation.className = "bold " + (delayDays > 3 ? "text-crimson" : (delayDays > 1 ? "text-amber" : "text-emerald"));
 
-    // Confidence Calculation
-    // Base confidence is 96%, reduced by weather severity and port issues
     let confidence = 96 - (weatherVal * 12) - (congestionVal * 10);
     confidence = Math.max(40, confidence);
 
@@ -901,7 +1352,7 @@ function initETAPredictor() {
     outputs.vesselNode.style.left = `${10 + (currentProgress * 0.8)}%`;
     outputs.vesselNode.querySelector(".vessel-bubble").textContent = `${vessel.name} (${currentProgress}%)`;
 
-    // Place weather node in middle of path
+    // Place weather node
     outputs.weatherNode.style.display = weatherVal > 0 ? "flex" : "none";
     if (weatherVal === 1) {
       outputs.weatherNode.innerHTML = '<i class="fa-solid fa-cloud-rain"></i> <span>Squall Warning</span>';
@@ -920,19 +1371,25 @@ function initETAPredictor() {
     input.addEventListener("change", runPrediction);
   });
 
-  document.getElementById("btn-eta-predict").addEventListener("click", () => {
-    // Add micro-animation spinning radar icon to button
-    const btn = document.getElementById("btn-eta-predict");
-    const origHtml = btn.innerHTML;
-    btn.innerHTML = '<i class="fa-solid fa-arrows-spin fa-spin"></i> Neural Net Estimating...';
-    btn.disabled = true;
-    
-    setTimeout(() => {
-      runPrediction();
-      btn.innerHTML = origHtml;
-      btn.disabled = false;
-    }, 600);
-  });
+  const btnPredict = document.getElementById("btn-eta-predict");
+  if (btnPredict) {
+    btnPredict.addEventListener("click", () => {
+      const origHtml = btnPredict.innerHTML;
+      btnPredict.innerHTML = '<i class="fa-solid fa-arrows-spin fa-spin"></i> Neural Net Estimating...';
+      btnPredict.disabled = true;
+      
+      setTimeout(() => {
+        // Force calculation update
+        if (apiToggle && apiToggle.checked) {
+          updateTelemetryLogs();
+        } else {
+          runPrediction();
+        }
+        btnPredict.innerHTML = origHtml;
+        btnPredict.disabled = false;
+      }, 600);
+    });
+  }
 
   // Run initial loading
   runPrediction();
