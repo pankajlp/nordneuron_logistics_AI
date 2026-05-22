@@ -1,0 +1,22 @@
+# requirements.txt - Python Backend Dependencies (Optional)
+# Note: The NordNeuron Logistics AI Suite is currently a fully client-side SPA.
+# If you expand the architecture to include a Python API service for backend processing,
+# you can install these dependencies using: pip install -r requirements.txt
+
+# API Server
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+
+# Document & Excel Parsing
+pandas>=2.2.0
+openpyxl>=3.1.0
+python-multipart>=0.0.9
+
+# AI & LLM Integration (OCR/Extractions)
+google-genai>=0.1.0
+openai>=1.14.0
+
+# General Utilities
+pydantic>=2.6.0
+python-dotenv>=1.0.1
+requests>=2.31.0
