@@ -38,6 +38,62 @@ function initRFQAnalyzer() {
     validity: document.getElementById("rfq-validity")
   };
 
+  // Cache the standard RFQ column dictionary (key -> {name, category}) so the
+  // "All Extracted Fields" table can show human-readable standard names.
+  const stdFieldMeta = {};
+  if (window.NordAPI) {
+    window.NordAPI.rfqStandardFields()
+      .then(list => list.forEach(f => { stdFieldMeta[f.key] = f; }))
+      .catch(() => {});
+  }
+
+  // Render every standard field the backend extracted from the uploaded document.
+  function renderExtractedFields(fieldsMap, format, matchCount) {
+    const panel = document.getElementById("rfq-analyzer-panel");
+    if (!panel) return;
+    let card = document.getElementById("rfq-extracted-fields-card");
+    if (!card) {
+      card = document.createElement("div");
+      card.id = "rfq-extracted-fields-card";
+      card.className = "card";
+      card.style.marginTop = "20px";
+      panel.appendChild(card);
+    }
+    const entries = Object.entries(fieldsMap || {});
+    if (!entries.length) { card.style.display = "none"; return; }
+    card.style.display = "block";
+
+    const rows = entries.map(([key, value]) => {
+      const meta = stdFieldMeta[key] || {};
+      const name = meta.name || key;
+      const cat = meta.category || "";
+      const unit = meta.unit ? ` <span style="color:var(--color-text-muted)">(${meta.unit})</span>` : "";
+      return `<tr>
+        <td style="padding:8px 10px; border-bottom:1px solid var(--border-color); color:var(--color-text-secondary); white-space:nowrap;">${name}${unit}</td>
+        <td style="padding:8px 10px; border-bottom:1px solid var(--border-color);"><span class="badge badge-info">${cat}</span></td>
+        <td style="padding:8px 10px; border-bottom:1px solid var(--border-color); font-weight:600; color:var(--color-text-primary);">${value}</td>
+      </tr>`;
+    }).join("");
+
+    card.innerHTML = `
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+        <h3 style="margin:0; font-size:1rem; display:flex; align-items:center; gap:8px;">
+          <i class="fa-solid fa-table-list" style="color:var(--color-cyan);"></i> All Extracted Fields
+        </h3>
+        <span class="badge badge-success">${matchCount} fields · ${String(format).toUpperCase()}</span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+          <thead><tr>
+            <th style="text-align:left; padding:8px 10px; color:var(--color-text-muted); font-weight:700; text-transform:uppercase; font-size:0.7rem;">Standard Column</th>
+            <th style="text-align:left; padding:8px 10px; color:var(--color-text-muted); font-weight:700; text-transform:uppercase; font-size:0.7rem;">Category</th>
+            <th style="text-align:left; padding:8px 10px; color:var(--color-text-muted); font-weight:700; text-transform:uppercase; font-size:0.7rem;">Extracted Value</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+
   // Mock extraction database based on uploaded file keyword
   const mockExtractions = [
     {
@@ -132,19 +188,33 @@ function initRFQAnalyzer() {
       badge.className = "badge badge-info";
     });
 
-    const isExcelOrCsv = file.name.endsWith(".xlsx") || file.name.endsWith(".xls") || file.name.endsWith(".csv");
-    
-    if (isExcelOrCsv && typeof XLSX !== "undefined") {
-      parseRFQFile(file, (err, res) => {
-        if (err) {
-          console.warn("SheetJS failed parsing RFQ file, falling back to mock:", err);
-          simulateExtraction(file.name, null);
-        } else {
-          simulateExtraction(file.name, res);
-        }
-      });
-    } else {
-      simulateExtraction(file.name, null);
+    // Prefer server-side extraction (real xlsx/docx/pdf/csv parser + DB sample fallback).
+    if (window.NordAPI) {
+      window.NordAPI.rfqExtract(file)
+        .then(res => {
+          simulateExtraction(file.name, { data: res.data, totalRows: res.match_count });
+          renderExtractedFields(res.fields, res.format, res.match_count);
+        })
+        .catch(() => runLocalExtraction());
+      return;
+    }
+    runLocalExtraction();
+
+    function runLocalExtraction() {
+      const isExcelOrCsv = file.name.endsWith(".xlsx") || file.name.endsWith(".xls") || file.name.endsWith(".csv");
+
+      if (isExcelOrCsv && typeof XLSX !== "undefined") {
+        parseRFQFile(file, (err, res) => {
+          if (err) {
+            console.warn("SheetJS failed parsing RFQ file, falling back to mock:", err);
+            simulateExtraction(file.name, null);
+          } else {
+            simulateExtraction(file.name, res);
+          }
+        });
+      } else {
+        simulateExtraction(file.name, null);
+      }
     }
   }
 
@@ -441,7 +511,7 @@ function initFreightCalculator() {
     "default": { "20GP": 2200, "40GP": 3150, "40HC": 3500 }
   };
 
-  function runCalculations() {
+  async function runCalculations() {
     const laneText = inputs.lane.value.toLowerCase();
     const containerType = inputs.container.value;
     const marginPct = parseInt(inputs.margin.value);
@@ -481,6 +551,30 @@ function initFreightCalculator() {
     outputs.sell.textContent = window.formatCurrency(sellPrice);
 
     updateComparisonChart(sellPrice, allinCost);
+
+    // Prefer the backend pricing engine; the local calc above is the fallback.
+    if (window.NordAPI) {
+      try {
+        const q = await window.NordAPI.freightQuote({
+          lane: inputs.lane.value,
+          container_type: containerType,
+          carrier: inputs.carrier.value,
+          season: inputs.season.value,
+          baf: parseFloat(inputs.baf.value) || 0,
+          congestion: parseFloat(inputs.congestion.value) || 0,
+          local: parseFloat(inputs.local.value) || 0,
+          margin_pct: marginPct
+        });
+        outputs.base.textContent = window.formatCurrency(q.base_ocean);
+        outputs.surcharges.textContent = window.formatCurrency(q.total_surcharges);
+        outputs.allinCost.textContent = window.formatCurrency(q.allin_cost);
+        outputs.profit.textContent = window.formatCurrency(q.profit);
+        outputs.sell.textContent = window.formatCurrency(q.sell_price);
+        updateComparisonChart(q.sell_price, q.allin_cost);
+      } catch (e) {
+        console.info("[NordNeuron] Freight backend unavailable, using local calc.");
+      }
+    }
   }
 
   // Bind change listeners to trigger calculations
@@ -688,37 +782,18 @@ function initHSCodeFinder() {
     }
   ];
 
-  searchInput.addEventListener("input", function() {
-    const query = this.value.trim().toLowerCase();
-    
-    if (query.length < 2) {
-      resultsContainer.innerHTML = `
-        <div class="card" style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--color-text-secondary);">
-          <i class="fa-solid fa-circle-question" style="font-size: 2.5rem; margin-bottom: 12px; color: var(--color-text-muted);"></i>
-          <p>Type in the search bar above to query customs codes.</p>
-        </div>
-      `;
-      return;
-    }
-
-    // Filter index for query matches
-    const matches = customsIndex.filter(item => 
-      item.keywords.some(k => query.includes(k) || k.includes(query)) ||
-      item.code.includes(query) ||
-      item.description.toLowerCase().includes(query)
-    );
-
-    if (matches.length === 0) {
+  // Shared renderer used by both the backend and local-fallback paths.
+  function renderHSMatches(matches, rawValue) {
+    if (!matches || matches.length === 0) {
       resultsContainer.innerHTML = `
         <div class="card" style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--color-crimson);">
           <i class="fa-solid fa-triangle-exclamation" style="font-size: 2.5rem; margin-bottom: 12px;"></i>
-          <p class="bold">No HS codes found for "${this.value}"</p>
+          <p class="bold">No HS codes found for "${rawValue}"</p>
           <p class="text-secondary mt-4" style="font-size: 0.85rem;">Try using broader terms like "toys", "clothing", "battery", or "parts".</p>
         </div>
       `;
       return;
     }
-
     resultsContainer.innerHTML = matches.map(match => `
       <div class="hs-result-card">
         <div class="hs-header-row">
@@ -742,6 +817,43 @@ function initHSCodeFinder() {
         </div>
       </div>
     `).join("");
+  }
+
+  searchInput.addEventListener("input", async function() {
+    const query = this.value.trim().toLowerCase();
+    const rawValue = this.value;
+
+    if (query.length < 2) {
+      resultsContainer.innerHTML = `
+        <div class="card" style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--color-text-secondary);">
+          <i class="fa-solid fa-circle-question" style="font-size: 2.5rem; margin-bottom: 12px; color: var(--color-text-muted);"></i>
+          <p>Type in the search bar above to query customs codes.</p>
+        </div>
+      `;
+      return;
+    }
+
+    // Prefer the backend HS database; fall back to the built-in index on error.
+    if (window.NordAPI) {
+      try {
+        const apiRows = await window.NordAPI.hsSearch(rawValue);
+        renderHSMatches(apiRows.map(m => ({
+          code: m.code, description: m.description, duty: m.duty_rate,
+          vat: m.vat_rate, status: m.status, badgeClass: m.badge_class, notes: m.notes
+        })), rawValue);
+        return;
+      } catch (e) {
+        console.info("[NordNeuron] HS search backend unavailable, using local index.");
+      }
+    }
+
+    // Local fallback: filter the built-in index for query matches.
+    const matches = customsIndex.filter(item =>
+      item.keywords.some(k => query.includes(k) || k.includes(query)) ||
+      item.code.includes(query) ||
+      item.description.toLowerCase().includes(query)
+    );
+    renderHSMatches(matches, rawValue);
   });
 }
 
@@ -781,7 +893,7 @@ function initDemurrageCalculator() {
   defaultPickup.setDate(today.getDate() + 7);
   inputs.pickup.value = defaultPickup.toISOString().split('T')[0];
 
-  function runDemurrageMath() {
+  async function runDemurrageMath() {
     const arrivalDate = new Date(inputs.arrival.value);
     const pickupDate = new Date(inputs.pickup.value);
     const freeDays = parseInt(inputs.freeDays.value) || 0;
@@ -885,6 +997,38 @@ function initDemurrageCalculator() {
     }
 
     updateDemurrageChart(costProjection, freeDays);
+
+    // Prefer the backend demurrage engine; local math above is the fallback.
+    if (window.NordAPI) {
+      try {
+        const r = await window.NordAPI.demurrageCalc({
+          port: inputs.port.value,
+          carrier: inputs.carrier.value,
+          free_days: freeDays,
+          daily_rate: dailyRate,
+          arrival_date: inputs.arrival.value,
+          pickup_date: inputs.pickup.value
+        });
+        outputs.overdueDays.textContent = `${r.overdue_days} Day${r.overdue_days !== 1 ? 's' : ''}`;
+        outputs.totalFee.textContent = window.formatCurrency(r.total_fee);
+      } catch (e) {
+        console.info("[NordNeuron] Demurrage backend unavailable, using local calc.");
+      }
+    }
+  }
+
+  // Pull the default free-day allowance and daily rate for the chosen
+  // port/carrier from the backend tariff table (real data when available).
+  async function loadTariffDefaults() {
+    if (!window.NordAPI) return;
+    try {
+      const rows = await window.NordAPI.demurrageTariffs(inputs.port.value, inputs.carrier.value);
+      if (rows && rows.length) {
+        inputs.freeDays.value = rows[0].free_days;
+        inputs.rate.value = rows[0].daily_rate;
+        runDemurrageMath();
+      }
+    } catch (e) { /* keep manual defaults */ }
   }
 
   // Bind Listeners
@@ -892,7 +1036,10 @@ function initDemurrageCalculator() {
     input.addEventListener("change", runDemurrageMath);
     input.addEventListener("input", runDemurrageMath);
   });
+  inputs.port.addEventListener("change", loadTariffDefaults);
+  inputs.carrier.addEventListener("change", loadTariffDefaults);
   document.getElementById("btn-dem-calc").addEventListener("click", runDemurrageMath);
+  loadTariffDefaults();
 
   // Demurrage historical uploader logic
   const demDropZone = document.getElementById("dem-drop-zone");
@@ -1257,7 +1404,7 @@ function initETAPredictor() {
     runPrediction();
   }
 
-  function runPrediction() {
+  async function runPrediction() {
     const selectedVesselKey = inputs.vessel.value;
     const vessel = vesselsDB[selectedVesselKey] || vesselsDB["ocean_atlas"];
 
@@ -1330,7 +1477,25 @@ function initETAPredictor() {
       day: 'numeric',
       year: 'numeric'
     });
-    
+
+    // Prefer the backend ETA engine (skips when running the live mock stream,
+    // which drives its own speed-based calculation locally).
+    if (window.NordAPI && !isLive) {
+      try {
+        const p = await window.NordAPI.etaPredict({
+          vessel_key: selectedVesselKey,
+          weather: weatherVal,
+          congestion: congestionVal
+        });
+        const apiDate = new Date(p.predicted_date + "T00:00:00");
+        outputs.predictedDate.textContent = apiDate.toLocaleDateString("en-US", {
+          month: 'short', day: 'numeric', year: 'numeric'
+        });
+      } catch (e) {
+        console.info("[NordNeuron] ETA backend unavailable, using local prediction.");
+      }
+    }
+
     outputs.delayDeviation.textContent = `+${delayDays.toFixed(1)} day${delayDays !== 1 ? 's' : ''}`;
     outputs.delayDeviation.className = "bold " + (delayDays > 3 ? "text-crimson" : (delayDays > 1 ? "text-amber" : "text-emerald"));
 

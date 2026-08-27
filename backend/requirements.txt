@@ -1,0 +1,9 @@
+# NordNeuron Logistics AI - backend dependencies
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+SQLAlchemy>=2.0.0
+pydantic>=2.6.0
+python-multipart>=0.0.9   # required for file uploads (RFQ / demurrage)
+openpyxl>=3.1.0           # server-side .xlsx / .xls parsing
+python-docx>=1.1.0        # Word .docx table extraction
+pdfplumber>=0.11.0        # PDF table + text extraction
