@@ -1,0 +1,21 @@
+# Runs the static SPA (nginx) and the FastAPI backend together.
+#   docker compose up --build
+# Then open http://localhost:8080  (API served at http://localhost:8000).
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    # Persist the SQLite dummy database across restarts (optional).
+    volumes:
+      - backend_data:/app
+
+  frontend:
+    build: .            # uses the existing root Dockerfile (nginx static)
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  backend_data:

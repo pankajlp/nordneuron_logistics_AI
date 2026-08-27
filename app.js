@@ -94,6 +94,18 @@ function initGlobalStats() {
     if (stats.utilization !== undefined) util.textContent = stats.utilization + "%";
     if (stats.alerts !== undefined) alerts.textContent = stats.alerts;
   };
+
+  // Hydrate the dashboard tiles from the backend when it is reachable.
+  if (window.NordAPI) {
+    window.NordAPI.stats().then(s => {
+      window.updateGlobalStats({
+        rfqs: s.active_rfqs,
+        savings: window.formatCurrency(s.freight_savings),
+        utilization: s.volume_packed_pct,
+        alerts: s.demurrage_alerts
+      });
+    }).catch(() => { /* keep the static defaults */ });
+  }
 }
 
 // Global helper for formatting currency

@@ -220,6 +220,34 @@ function updatePlannerScene() {
   if (typeof window.updateGlobalStats === "function") {
     window.updateGlobalStats({ utilization: result.utilization.toFixed(1) });
   }
+
+  // Prefer the backend packing engine for the numeric panel; the local
+  // heuristic above still drives the 3D scene and is the fallback.
+  if (window.NordAPI) {
+    window.NordAPI.pack({
+      container_size: sizeType,
+      cartons: {
+        length_cm: boxDim.length * 100, width_cm: boxDim.width * 100,
+        height_cm: boxDim.height * 100, weight_kg: boxDim.weight, qty: boxDim.qty
+      },
+      pallets: {
+        length_cm: palletDim.length * 100, width_cm: palletDim.width * 100,
+        height_cm: palletDim.height * 100, weight_kg: palletDim.weight, qty: palletDim.qty
+      }
+    }).then(p => {
+      document.getElementById("planner-space-util").textContent = `${p.space_utilization_pct.toFixed(1)}%`;
+      document.getElementById("planner-cartons-fit").textContent = `${p.cartons_fit} / ${p.cartons_requested}`;
+      document.getElementById("planner-pallets-fit").textContent = `${p.pallets_fit} / ${p.pallets_requested}`;
+      document.getElementById("planner-unused-space").textContent = `${p.unused_volume_m3.toFixed(2)} m³`;
+      document.getElementById("planner-total-weight").textContent = `${p.total_weight_kg.toLocaleString()} kg`;
+      document.getElementById("planner-weight-balance").textContent = p.weight_balance;
+      const bal = document.getElementById("planner-weight-balance");
+      bal.className = p.weight_balance.includes("Balanced") ? "val text-emerald" : "val text-amber";
+      if (typeof window.updateGlobalStats === "function") {
+        window.updateGlobalStats({ utilization: p.space_utilization_pct.toFixed(1) });
+      }
+    }).catch(() => { /* keep local heuristic result */ });
+  }
 }
 
 // Build the container outer boundaries
@@ -237,7 +265,7 @@ function buildContainerMesh(cL, cW, cH) {
   const floorGeom = new THREE.BoxGeometry(cL, 0.05, cW);
   const floorMat = new THREE.MeshPhongMaterial({
     color: 0x111827,
-    roughness: 0.8,
+    shininess: 10,
     transparent: true,
     opacity: 0.7
   });
