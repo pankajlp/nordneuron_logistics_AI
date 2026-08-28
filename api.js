@@ -9,9 +9,17 @@
   const DEFAULT_BASE = "http://127.0.0.1:8000/api";
   const BASE = (window.NORD_API_BASE || DEFAULT_BASE).replace(/\/$/, "");
 
-  let online = null; // null = unknown, true/false once probed
+  // When the SPA is served from a public host (e.g. GitHub Pages) rather than a
+  // local machine, there is no backend to reach and the default localhost URL
+  // would be blocked as mixed content. Detect that and run fully standalone,
+  // skipping network calls so every module cleanly uses its built-in logic.
+  const isLocalHost = ["localhost", "127.0.0.1", "0.0.0.0", ""].includes(location.hostname);
+  const STANDALONE = !window.NORD_API_BASE && !isLocalHost;
+
+  let online = STANDALONE ? false : null; // null = unknown, true/false once probed
 
   async function req(path, opts) {
+    if (STANDALONE) throw new Error("standalone-mode");
     const res = await fetch(BASE + path, opts);
     if (!res.ok) throw new Error("HTTP " + res.status);
     return res.status === 204 ? null : res.json();
@@ -72,6 +80,10 @@
 
   // Probe once at startup and reflect status in the header pill if present.
   document.addEventListener("DOMContentLoaded", () => {
+    if (STANDALONE) {
+      console.info("[NordNeuron] Public demo - running standalone with built-in data.");
+      return;
+    }
     API.health().then((ok) => {
       const pill = document.querySelector(".ai-status-pill span, #ai-engine-status");
       if (pill && ok) pill.textContent = "Backend Connected";
